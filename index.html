@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset=utf-8 />
+    <title>US Power Plants</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.0.2/dist/leaflet.css" />
+    <link href='http://fonts.googleapis.com/css?family=Lato' rel='stylesheet' type='text/css'>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: whitesmoke;
+            font-family: Lato, sans-serif;
+            color: #0D0000;
+        }
+        
+        header {
+            padding: 6px 10%;
+        }
+        
+        h1 {
+            display: inline-block;
+            margin-right: 20px;
+            color: #001323;
+        }
+        
+        h2 {
+            display: inline-block;
+            color: #001323;
+        }
+        
+        #map {
+            width: 80%;
+            height: 540px;
+            margin: 10px auto;
+        }
+        
+        footer {
+            padding: 6px 10%;
+            width: 80%;
+        }
+        
+        p {
+            font-size: 1em;
+            color: #001323;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>US Power Plants</h1>
+        <h2>Coal, Nuclear, Hydro Power</h2>
+    </header>
+
+    <div id='map'></div>
+
+    <footer>
+        <p>Map authored by Kevin Hogue, for NMP Fall 2016</p>
+        <p>Click the map to show US power plants within a 500km radius, then click the feature to show distance from click point to the plant</p>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.0.2/dist/leaflet.js"></script>
+    <script src="power-plants.js"></script>
+    <script>
+        var map = L.map('map', {
+            center: [36, -94],
+            zoom: 4,
+        });
+
+        var tiles = L.tileLayer('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="http://cartodb.com/attributions">CartoDB</a>',
+            subdomains: 'abcd',
+            maxZoom: 19
+        });
+
+        tiles.addTo(map);
+        //  create cirlce for spotlight
+        var radiusCircle = L.circle([0, 0], 500000, {
+            fillColor: 'white',
+            fillOpacity: .1,
+            color: 'yellow',
+            opacity: .3,
+            stroke: false,
+            weight: 3,
+        }).addTo(map)
+
+        //  send larger circles to front
+        plants.features.sort(function (a, b) {
+            return b.properties.capacity_mw - a.properties.capacity_mw;
+        });
+
+        var commonStyles = {
+            weight: 1,
+            stroke: 1,
+            fillOpacity: .8
+        };
+        //  creat layers
+        var layerInfo = {
+            coalLayer: {
+                source: "Coal",
+                color: '#bfbfbf'
+            },
+
+            nuclearLayer: {
+                source: "Nuclear",
+                color: '#f5a9a9'
+            },
+            hydroLayer: {
+                source: "Hydro",
+                color: '#1f78b4'
+            }
+
+        };
+
+        var geoJsonLayers = {};
+        //  create refactorable loop for creating the first map
+        for (var layer in layerInfo) {
+            geoJsonLayers[layer] = L.geoJson(plants, {
+                pointToLayer: function (feature, latlng) {
+                    return L.circleMarker(latlng, commonStyles);
+                },
+                filter: function (feature) {
+                    if (feature.properties.fuel_source[layerInfo[layer].source]) {
+                        return feature;
+                    }
+                },
+                style: function (feature) {
+                    return {
+                        color: layerInfo[layer].color,
+                        fillColor: layerInfo[layer].color,
+                        radius: getRadius(feature.properties.fuel_source[layerInfo[layer].source])
+                    }
+
+                }
+            }).addTo(map);
+
+        };
+
+        map.on('click', function (e) {
+            //  create a UI where the click creates a spotlight 5000 KM from click point
+            radiusCircle.setLatLng(e.latlng)
+            for (var l in layerInfo) {
+                geoJsonLayers[l].eachLayer(function (layer) {
+                    var distance = e.latlng.distanceTo(layer.getLatLng()) / 1000;
+                    //  console.log(layer);
+                    if (distance > 500) {
+                        layer.setStyle({
+                            stroke: false,
+                            fill: false
+                        });
+                    } else {
+                        layer.setStyle({
+                            stroke: true,
+                            fill: true
+                        });
+                        //  create variables for building popup
+                        var props = layer.feature.properties;
+                        var plant = props.plant_name;
+                        var type = layerInfo[l].source;
+                        var value = props.fuel_source[layerInfo[l].source] + " MW";
+                        var partOne = "<b>" + plant + "</b>" + "<br>";
+                        var partTwo = "<b>" + type + " Power" + "</b>" + "<br>";
+                        var partThree = "<b>" + value + "</b>" + " of production from " + type + "<br>";
+                        var partFour = "This plant is <b>" + distance.toLocaleString() +
+                            "km</b><br> from the click point.";
+
+                        var content = partOne + partTwo + partThree + partFour
+
+                        layer.bindPopup(content);
+                    }
+                });
+
+            }
+        });
+
+        //  function for creating radius of circles
+        function getRadius(val) {
+            var radius = Math.sqrt(val / Math.PI);
+            return radius * .8;
+        };
+        //  create toggle switch in corner of map
+        var sourcesLayers = { //  adds layer control
+            "<b style='color:#bfbfbf'>Coal</b>": geoJsonLayers.coalLayer,
+            "<b style='color:#f5a9a9'>Nuclear</b>": geoJsonLayers.nuclearLayer,
+            "<b style='color:#1f78b4'>Hydro</b>": geoJsonLayers.hydroLayer
+
+        };
+        //  posts the toggle switch
+        L.control.layers(null, sourcesLayers, {
+            collapsed: false
+        }).addTo(map)
+    </script>
+
+</body>
+
+</html>
